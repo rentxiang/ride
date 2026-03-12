@@ -1,0 +1,17 @@
+import { Text } from "react-native";
+import Mapbox, { Camera, LocationPuck, MapView } from "@rnmapbox/maps";
+
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_KEY || "");
+
+export default function Map() {
+  return (
+    <MapView style={{ flex: 1 }} styleURL="mapbox://styles/mapbox/dark-v11">
+      <Camera followUserLocation followZoomLevel={16} />
+      <LocationPuck
+        puckBearing="heading"
+        puckBearingEnabled
+        pulsing={{ isEnabled: true }}
+      />
+    </MapView>
+  );
+}
