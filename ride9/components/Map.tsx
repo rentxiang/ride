@@ -1,4 +1,3 @@
-import { Text } from "react-native";
 import Mapbox, { Camera, LocationPuck, MapView } from "@rnmapbox/maps";
 
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_KEY || "");

@@ -1,109 +1,151 @@
-import { Image } from "expo-image";
-import { Platform, StyleSheet } from "react-native";
+import Mapbox, { Camera, LocationPuck, MapView } from "@rnmapbox/maps";
+import { useEffect, useState } from "react";
 
-import { HelloWave } from "@/components/hello-wave";
-import ParallaxScrollView from "@/components/parallax-scroll-view";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { Link } from "expo-router";
-import Map from "@/components/Map";
+import FriendMarker from "../../components/FriendMaker";
+import { startLocationTracking } from "../../services/location";
+import { updateLocation, getFriendLocations } from "../../services/location";
+import { subscribeLocations } from "../../services/realtime";
+import { StyleSheet, TouchableOpacity, View, Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { supabase } from "@/services/supabase";
+import { JwtPayload } from '@supabase/supabase-js'
 
-export default function HomeScreen() {
+
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_KEY || "");
+
+export default function Map() {
+  const [friends, setFriends] = useState<
+    { user_id: number; [key: string]: any }[]
+  >([]);
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [user, setUser] = useState<any>(null);
+  const [claims, setClaims] = useState<JwtPayload | null>(null)
+
+
+  useEffect(() => {
+    supabase.auth.getClaims().then(({ data }) => {
+      if (data) {
+        setClaims(data.claims);
+      }
+    })
+    supabase.auth.onAuthStateChange(() => {
+      supabase.auth.getClaims().then(({ data }) => {
+        if (data) {
+          setClaims(data.claims);
+        }
+      })
+    })
+  }, [])
+
+  useEffect(() => {
+    // watch login state
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === "SIGNED_IN") {
+          setUser(session?.user || null);
+        } else if (event === "SIGNED_OUT") {
+          setUser(null);
+        }
+      }
+    );
+
+    // fetch current user
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data?.user || null);
+    };
+
+    fetchUser();
+
+    return () => {
+      subscription?.subscription?.unsubscribe(); // Unsubscribe from auth state changes on cleanup
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      console.log("Anonymous user: Skipping location updates.");
+      return;
+    }
+
+    const loadInitialFriends = async () => {
+      const friendIds = ["user1", "user2", "user3"];
+      const initialFriends = await getFriendLocations(friendIds);
+      setFriends(initialFriends || []);
+    };
+
+    loadInitialFriends();
+
+    startLocationTracking((coords: any) => {
+      updateLocation(
+        user.id,
+        "User Name",
+        coords.latitude,
+        coords.longitude
+      ).catch((error) => {
+        console.error("Failed to update location:", error);
+      });
+    });
+
+    const sub = subscribeLocations(setFriends);
+
+    return () => {
+      if (sub && typeof sub.unsubscribe === "function") {
+        sub.unsubscribe();
+      }
+    };
+  }, [user]);
+
   return (
-    <Map />
-    // <ParallaxScrollView
-    //   headerBackgroundColor={{ light: "#A1CEDC", dark: "#1D3D47" }}
-    //   headerImage={
-    //     <Image
-    //       source={require("@/assets/images/partial-react-logo.png")}
-    //       style={styles.reactLogo}
-    //     />
-    //   }
-    // >
-    //   <ThemedView style={styles.titleContainer}>
-    //     <ThemedText type="title">Welcome!</ThemedText>
-    //     <HelloWave />
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-    //     <ThemedText>
-    //       Edit{" "}
-    //       <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText>{" "}
-    //       to see changes. Press{" "}
-    //       <ThemedText type="defaultSemiBold">
-    //         {Platform.select({
-    //           ios: "cmd + d",
-    //           android: "cmd + m",
-    //           web: "F12",
-    //         })}
-    //       </ThemedText>{" "}
-    //       to open developer tools.
-    //     </ThemedText>
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <Link href="/modal">
-    //       <Link.Trigger>
-    //         <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-    //       </Link.Trigger>
-    //       <Link.Preview />
-    //       <Link.Menu>
-    //         <Link.MenuAction
-    //           title="Action"
-    //           icon="cube"
-    //           onPress={() => alert("Action pressed")}
-    //         />
-    //         <Link.MenuAction
-    //           title="Share"
-    //           icon="square.and.arrow.up"
-    //           onPress={() => alert("Share pressed")}
-    //         />
-    //         <Link.Menu title="More" icon="ellipsis">
-    //           <Link.MenuAction
-    //             title="Delete"
-    //             icon="trash"
-    //             destructive
-    //             onPress={() => alert("Delete pressed")}
-    //           />
-    //         </Link.Menu>
-    //       </Link.Menu>
-    //     </Link>
+    <View style={{ flex: 1 }}>
+      <MapView
+        style={{ flex: 1 }}
+        styleURL={theme === "dark" ? "mapbox://styles/mapbox/dark-v11" : ""}
+      >
+        <Camera followUserLocation followZoomLevel={16} />
+        <LocationPuck
+          puckBearing="heading"
+          puckBearingEnabled
+          pulsing={{ isEnabled: true }}
+        />
 
-    //     <ThemedText>
-    //       {`Tap the Explore tab to learn more about what's included in this starter app.`}
-    //     </ThemedText>
-    //   </ThemedView>
-    //   <ThemedView style={styles.stepContainer}>
-    //     <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-    //     <ThemedText>
-    //       {`When you're ready, run `}
-    //       <ThemedText type="defaultSemiBold">
-    //         npm run reset-project
-    //       </ThemedText>{" "}
-    //       to get a fresh <ThemedText type="defaultSemiBold">app</ThemedText>{" "}
-    //       directory. This will move the current{" "}
-    //       <ThemedText type="defaultSemiBold">app</ThemedText> to{" "}
-    //       <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-    //     </ThemedText>
-    //   </ThemedView>
-    // </ParallaxScrollView>
+        {friends.map((f) => (
+          <FriendMarker key={f.user_id} friend={f} />
+        ))}
+      </MapView>
+      {!user && (
+        <View style={{ position: "absolute", top: 10, left: 10 }}>
+          <Text>You are viewing as a guest.</Text>
+        </View>
+      )}
+      {claims && <Text>logged user: {claims.sub}</Text>}
+      <TouchableOpacity
+        style={styles.iconButton}
+        onPress={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+      >
+        <Ionicons
+          name={theme === "dark" ? "sunny" : "moon"}
+          size={24}
+          color={theme === "dark" ? "black" : "black"}
+        />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  iconButton: {
     position: "absolute",
+    top: 70,
+    right: 15,
+    zIndex: 1,
+    backgroundColor: "white",
+    padding: 6,
+    borderRadius: 18,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 5,
   },
 });
