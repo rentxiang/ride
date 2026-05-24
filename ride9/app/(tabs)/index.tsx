@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   },
   hud: {
     position: "absolute",
-    top: 75,
+    top: 80,
     left: 0,
     right: 0,
     alignItems: "center",
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
   },
   toast: {
     position: "absolute",
-    top: 110,
+    top: 130,
     alignSelf: "center",
     flexDirection: "row",
     alignItems: "center",
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
   },
   controls: {
     position: "absolute",
-    bottom: 100,
+    bottom: 90,
     right: 16,
     gap: 10,
   },

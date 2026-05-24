@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      background: #1a1a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: -apple-system, sans-serif;
+    }
+    canvas {
+      border-radius: 220px;
+      box-shadow: 0 0 80px rgba(255, 69, 0, 0.3);
+    }
+    button {
+      margin-top: 32px;
+      padding: 14px 36px;
+      background: #ff4500;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+    p {
+      color: #555;
+      font-size: 13px;
+      margin-top: 12px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="icon" width="1024" height="1024"></canvas>
+  <button onclick="download()">DOWNLOAD PNG</button>
+  <p>Replace ios/ride9/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png</p>
+
+  <script>
+    const canvas = document.getElementById('icon');
+    const ctx = canvas.getContext('2d');
+    const S = 1024;
+    const cx = S / 2;
+    const cy = S / 2;
+
+    // Background
+    ctx.fillStyle = '#080808';
+    ctx.fillRect(0, 0, S, S);
+
+    // Subtle warm radial glow behind symbol
+    const bgGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 420);
+    bgGlow.addColorStop(0, 'rgba(255, 69, 0, 0.08)');
+    bgGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bgGlow;
+    ctx.fillRect(0, 0, S, S);
+
+    // --- Outer ring glow (soft) ---
+    ctx.beginPath();
+    ctx.arc(cx, cy, 330, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 69, 0, 0.18)';
+    ctx.lineWidth = 48;
+    ctx.stroke();
+
+    // --- Outer ring ---
+    ctx.beginPath();
+    ctx.arc(cx, cy, 330, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ff4500';
+    ctx.lineWidth = 10;
+    ctx.stroke();
+
+    // --- Inner ring glow (soft) ---
+    ctx.beginPath();
+    ctx.arc(cx, cy, 190, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 69, 0, 0.14)';
+    ctx.lineWidth = 36;
+    ctx.stroke();
+
+    // --- Inner ring ---
+    ctx.beginPath();
+    ctx.arc(cx, cy, 190, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ff4500';
+    ctx.lineWidth = 7;
+    ctx.stroke();
+
+    // --- Center dot glow ---
+    const dotGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60);
+    dotGlow.addColorStop(0, 'rgba(255,120,0,0.7)');
+    dotGlow.addColorStop(1, 'rgba(255,69,0,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, 60, 0, Math.PI * 2);
+    ctx.fillStyle = dotGlow;
+    ctx.fill();
+
+    // --- Center dot ---
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff4500';
+    ctx.fill();
+
+    // --- CARVE label ---
+    ctx.font = '700 52px -apple-system, "SF Pro Display", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.textAlign = 'center';
+    ctx.letterSpacing = '12px';
+    ctx.fillText('CARVE', cx + 14, cy + 430);
+
+    function download() {
+      const link = document.createElement('a');
+      link.download = 'App-Icon-1024x1024@1x.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+  </script>
+</body>
+</html>

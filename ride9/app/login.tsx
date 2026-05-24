@@ -89,7 +89,7 @@ export default function Login() {
     >
       <View style={styles.content}>
         <Text style={styles.logo}>◎</Text>
-        <Text style={styles.title}>RIDE</Text>
+        <Text style={styles.title}>CARVE</Text>
         <Text style={styles.subtitle}>live group ride tracking</Text>
 
         <View style={styles.form}>
