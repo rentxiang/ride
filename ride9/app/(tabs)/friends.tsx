@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "expo-router";
 import { supabase } from "../../services/supabase";
 import {
   View,
@@ -12,14 +13,26 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { getFriends, addFriend, removeFriend } from "../../services/friends";
 import { getProfile } from "../../services/profile";
+import { useLocationSharing } from "../../contexts/LocationSharingContext";
+
+type Friend = {
+  friend_id: string;
+  friend: { name: string; username: string | null; bike: string | null };
+};
+
+function isLive(loc: any): boolean {
+  return !!loc?.is_sharing;
+}
 
 export default function Friends() {
+  const router = useRouter();
+  const { setFocusCoords } = useLocationSharing();
+
   const [user, setUser] = useState<any>(null);
   const [selfUsername, setSelfUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [friends, setFriends] = useState<
-    { friend_id: string; friend: { name: string; username: string | null; bike: string | null } }[]
-  >([]);
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [locations, setLocations] = useState<Record<string, any>>({});
   const [tag, setTag] = useState("");
 
   useEffect(() => {
@@ -44,13 +57,43 @@ export default function Friends() {
 
   const fetchFriends = async (userId: string) => {
     const data = await getFriends(userId);
-    setFriends(
-      data.map((item: any) => ({
-        friend_id: item.friend_id,
-        friend: item.friend,
-      }))
-    );
+    const mapped = data.map((item: any) => ({
+      friend_id: item.friend_id,
+      friend: item.friend,
+    }));
+    setFriends(mapped);
+    fetchLocations(mapped.map((f: Friend) => f.friend_id));
   };
+
+  const fetchLocations = async (friendIds: string[]) => {
+    if (friendIds.length === 0) { setLocations({}); return; }
+    const { data } = await supabase
+      .from("locations")
+      .select("user_id, lat, lng, is_sharing, updated_at")
+      .in("user_id", friendIds);
+    const map: Record<string, any> = {};
+    data?.forEach((loc: any) => { map[loc.user_id] = loc; });
+    setLocations(map);
+  };
+
+  // Realtime location updates for friends
+  useEffect(() => {
+    if (!user || friends.length === 0) return;
+    const friendIds = friends.map((f) => f.friend_id);
+    const channel = supabase
+      .channel("friends-page-locations")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "locations" },
+        (payload) => {
+          const updated = payload.new as any;
+          if (!friendIds.includes(updated.user_id)) return;
+          setLocations((prev) => ({ ...prev, [updated.user_id]: updated }));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [friends, user]);
 
   const handleAddFriend = async () => {
     const cleanTag = tag.replace(/^@/, "").trim();
@@ -86,23 +129,25 @@ export default function Friends() {
     ]);
   };
 
+  const handleLocateFriend = (friendId: string) => {
+    const loc = locations[friendId];
+    if (!loc?.lat || !loc?.lng || !isLive(loc)) return;
+    router.navigate("/");
+    setTimeout(() => {
+      setFocusCoords({ latitude: loc.lat, longitude: loc.lng });
+    }, 350);
+  };
+
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel("friends-changes")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "friends",
-          filter: `user_id=eq.${user.id}`,
-        },
+        { event: "*", schema: "public", table: "friends", filter: `user_id=eq.${user.id}` },
         () => fetchFriends(user.id)
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
@@ -119,7 +164,6 @@ export default function Friends() {
       <Text style={styles.title}>CREW</Text>
       <Text style={styles.subtitle}>{selfUsername ? `@${selfUsername}` : user?.email}</Text>
 
-      {/* Tag input */}
       <View style={styles.addContainer}>
         <View style={styles.inputWrapper}>
           <Text style={styles.atSign}>@</Text>
@@ -151,28 +195,36 @@ export default function Friends() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.friendItem}>
-            <View style={styles.friendInfo}>
-              <View style={styles.friendDot} />
-              <View>
-                <Text style={styles.name}>{item.friend.name}</Text>
-                {item.friend.username ? (
-                  <Text style={styles.handle}>@{item.friend.username}</Text>
-                ) : null}
-                {item.friend.bike ? (
-                  <Text style={styles.bike}>{item.friend.bike}</Text>
-                ) : null}
-              </View>
+        renderItem={({ item }) => {
+          const live = isLive(locations[item.friend_id]);
+          const hasLocation = !!locations[item.friend_id]?.lat;
+          return (
+            <View style={styles.friendItem}>
+              <TouchableOpacity
+                style={styles.friendInfo}
+                onPress={() => handleLocateFriend(item.friend_id)}
+                activeOpacity={hasLocation ? 0.6 : 1}
+              >
+                <View style={[styles.friendDot, live && styles.friendDotLive]} />
+                <View>
+                  <Text style={styles.name}>{item.friend.name}</Text>
+                  {item.friend.username ? (
+                    <Text style={styles.handle}>@{item.friend.username}</Text>
+                  ) : null}
+                  {item.friend.bike ? (
+                    <Text style={styles.bike}>{item.friend.bike}</Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => handleRemoveFriend(item.friend_id)}
+              >
+                <Ionicons name="close" size={16} color="#444" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.removeButton}
-              onPress={() => handleRemoveFriend(item.friend_id)}
-            >
-              <Ionicons name="close" size={16} color="#444" />
-            </TouchableOpacity>
-          </View>
-        )}
+          );
+        }}
       />
     </View>
   );
@@ -259,12 +311,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    flex: 1,
   },
   friendDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: "#222",
+  },
+  friendDotLive: {
+    backgroundColor: "#ff4500",
   },
   name: {
     fontSize: 15,

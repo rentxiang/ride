@@ -6,7 +6,6 @@ import * as Location from "expo-location";
 import { supabase } from "@/services/supabase";
 import RiderMarker from "../../components/RiderMarker";
 import { getFriendLocations } from "../../services/location";
-import { subscribeLocations } from "../../services/realtime";
 import { getFriends } from "../../services/friends";
 import { getRoomMemberLocations, getRoomMembers } from "../../services/rooms";
 import { useLocationSharing } from "../../contexts/LocationSharingContext";
@@ -32,8 +31,10 @@ export default function MapScreen() {
     color: "#00c46a",
   });
 
-  const { coordsRef, isSharing, startSharing, stopSharing, currentRoom } =
+  const { coordsRef, isSharing, startSharing, stopSharing, currentRoom, focusCoords, setFocusCoords } =
     useLocationSharing();
+  const [followMode, setFollowMode] = useState(false);
+  const [selectedRiderId, setSelectedRiderId] = useState<string | null>(null);
   const cameraRef = useRef<Camera>(null);
 
   // Toast animation (slides down from above)
@@ -43,6 +44,7 @@ export default function MapScreen() {
 
   // Share button pulse
   const buttonScale = useRef(new Animated.Value(1)).current;
+
 
   const showToast = (config: ToastConfig) => {
     setToastConfig(config);
@@ -105,10 +107,11 @@ export default function MapScreen() {
     return () => sub?.subscription.unsubscribe();
   }, []);
 
+  // Refetch locations whenever friends list changes (catches new friends immediately)
   useEffect(() => {
-    if (!authUser) return;
+    if (!authUser || friends.length === 0) return;
     getFriendLocations(authUser.id).then((data) => setLocations(data || []));
-  }, [authUser]);
+  }, [friends]);
 
   const loadFriends = async (userId: string) => {
     const data = await getFriends(userId);
@@ -192,13 +195,23 @@ export default function MapScreen() {
     return () => { supabase.removeChannel(channel); };
   }, [authUser]);
 
-  // Friend realtime locations
+  // Single persistent location subscription — subscribe once, filter in callback
   useEffect(() => {
-    if (!authUser || friends.length === 0) return;
-    const friendIds = friends.map((f) => f.user_id);
-    const sub = subscribeLocations(friendIds, setLocations);
-    return () => { sub?.unsubscribe(); };
-  }, [friends]);
+    if (!authUser) return;
+    const channel = supabase
+      .channel("locations-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "locations" },
+        (payload) => {
+          const updated = payload.new as any;
+          setLocations((prev: any[]) => [
+            ...prev.filter((l) => l.user_id !== updated.user_id),
+            updated,
+          ]);
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [authUser]);
 
   // Room member locations
   useEffect(() => {
@@ -227,6 +240,15 @@ export default function MapScreen() {
     return () => clearInterval(interval);
   }, [currentRoom?.id]);
 
+  // Fly to a friend tapped from the crew tab
+  useEffect(() => {
+    if (!focusCoords || !cameraRef.current) return;
+    setFollowMode(false);
+    cameraRef.current.flyTo([focusCoords.longitude, focusCoords.latitude], 800);
+    setFocusCoords(null);
+  }, [focusCoords]);
+
+
   // Merge friends + room members, deduplicated, exclude self
   const selfId = authUser?.id;
 
@@ -253,6 +275,10 @@ export default function MapScreen() {
   const activeCount = allRiders.length;
 
   const centerOnUser = async () => {
+    if (followMode) {
+      setFollowMode(false);
+      await new Promise<void>((r) => setTimeout(r, 50));
+    }
     if (!cameraRef.current) return;
 
     if (coordsRef.current) {
@@ -300,11 +326,13 @@ export default function MapScreen() {
         style={styles.map}
         styleURL="mapbox://styles/mapbox/dark-v11"
         onCameraChanged={(e) => setZoomLevel(e.properties.zoom)}
+        onPress={() => setSelectedRiderId(null)}
       >
         <Camera
           ref={cameraRef}
           zoomLevel={15}
-          followUserLocation={false}
+          followUserLocation={followMode}
+          followZoomLevel={15}
           animationMode="flyTo"
         />
         {(!isSharing || !selfCoords) && (
@@ -315,7 +343,17 @@ export default function MapScreen() {
           />
         )}
         {allRiders.map((r) => (
-          <RiderMarker key={r.user_id} rider={r} showLabel={zoomLevel >= 13} />
+          <RiderMarker
+            key={r.user_id}
+            rider={r}
+            showLabel={zoomLevel >= 13}
+            selected={selectedRiderId === r.user_id}
+            onPress={() => {
+              setSelectedRiderId(r.user_id);
+              setFollowMode(false);
+              cameraRef.current?.flyTo([r.longitude, r.latitude], 600);
+            }}
+          />
         ))}
         {isSharing && selfCoords && selfProfile && (
           <RiderMarker
@@ -358,6 +396,18 @@ export default function MapScreen() {
       <View style={styles.controls}>
         <TouchableOpacity style={styles.iconButton} onPress={centerOnUser}>
           <Ionicons name="locate" size={20} color="#fff" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.iconButton, followMode && styles.iconButtonFollow]}
+          onPress={() => setFollowMode((v) => !v)}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={followMode ? "lock-closed" : "lock-open-outline"}
+            size={20}
+            color={followMode ? "#ff4500" : "#666"}
+          />
         </TouchableOpacity>
 
         <Animated.View style={buttonAnimStyle}>
@@ -460,5 +510,9 @@ const styles = StyleSheet.create({
   iconButtonActive: {
     borderColor: "#00c46a33",
     backgroundColor: "rgba(0, 196, 106, 0.08)",
+  },
+  iconButtonFollow: {
+    borderColor: "#ff450044",
+    backgroundColor: "rgba(255, 69, 0, 0.08)",
   },
 });

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from "react";
-import { Animated, View, Text, Image, StyleSheet } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
 import { MarkerView } from "@rnmapbox/maps";
 
 function getLastSeenText(updatedAt: string | undefined): string | null {
@@ -10,9 +10,37 @@ function getLastSeenText(updatedAt: string | undefined): string | null {
   return `Last seen ${Math.floor(diffMin / 60)}h ago`;
 }
 
-export default function RiderMarker({ rider, showLabel = true }: { rider: any; showLabel?: boolean }) {
+interface Props {
+  rider: any;
+  showLabel?: boolean;
+  selected?: boolean;
+  onPress?: () => void;
+}
+
+export default function RiderMarker({ rider, showLabel = true, selected = false, onPress }: Props) {
   const glowScale = useRef(new Animated.Value(1)).current;
   const glowOpacity = useRef(new Animated.Value(0.18)).current;
+
+  const animCoords = useRef(
+    new Animated.ValueXY({ x: rider.longitude, y: rider.latitude })
+  ).current;
+  const [displayCoords, setDisplayCoords] = useState<[number, number]>([
+    rider.longitude,
+    rider.latitude,
+  ]);
+
+  useEffect(() => {
+    const id = animCoords.addListener(({ x, y }) => setDisplayCoords([x, y]));
+    return () => animCoords.removeListener(id);
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(animCoords, {
+      toValue: { x: rider.longitude, y: rider.latitude },
+      duration: 1200,
+      useNativeDriver: false,
+    }).start();
+  }, [rider.latitude, rider.longitude]);
 
   const lastSeen = getLastSeenText(rider.updated_at);
   const isStale = lastSeen !== null;
@@ -43,9 +71,14 @@ export default function RiderMarker({ rider, showLabel = true }: { rider: any; s
   return (
     <MarkerView
       id={`rider-${rider.user_id}`}
-      coordinate={[rider.longitude, rider.latitude]}
+      coordinate={displayCoords}
+      allowOverlap={true}
     >
-      <View style={styles.container}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={onPress ? 0.75 : 1}
+        style={styles.container}
+      >
         <View style={styles.avatarWrapper}>
           <Animated.View
             style={[
@@ -66,15 +99,17 @@ export default function RiderMarker({ rider, showLabel = true }: { rider: any; s
             ]}
           />
         </View>
-        <View style={[styles.label, isStale && styles.labelStale]}>
-          <Text style={[styles.name, isStale && styles.nameStale]}>{rider.name}</Text>
-          {isStale ? (
+        <View style={[styles.label, isStale && !selected && styles.labelStale]}>
+          <Text style={[styles.name, isStale && !selected && styles.nameStale]}>
+            {rider.name}
+          </Text>
+          {selected && isStale && showLabel ? (
             <Text style={styles.lastSeen}>{lastSeen}</Text>
-          ) : showLabel && rider.bike ? (
+          ) : !isStale && showLabel && rider.bike ? (
             <Text style={styles.bike}>{rider.bike}</Text>
           ) : null}
         </View>
-      </View>
+      </TouchableOpacity>
     </MarkerView>
   );
 }
@@ -119,7 +154,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   labelStale: {
-    backgroundColor: "rgba(8, 8, 8, 0.55)",
+    backgroundColor: "rgba(8, 8, 8, 0.45)",
   },
   name: {
     fontSize: 11,
@@ -128,7 +163,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   nameStale: {
-    color: "#666",
+    color: "#555",
   },
   bike: {
     fontSize: 10,
@@ -138,7 +173,7 @@ const styles = StyleSheet.create({
   },
   lastSeen: {
     fontSize: 10,
-    color: "#555",
+    color: "#ff4500",
     marginTop: 1,
     letterSpacing: 0.2,
   },
