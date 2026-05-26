@@ -1,7 +1,7 @@
 import Mapbox, { Camera, LocationPuck, MapView } from "@rnmapbox/maps";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useFocusEffect } from "expo-router";
-import { Animated, StyleSheet, TouchableOpacity, View, Text } from "react-native";
+import { Animated, StyleSheet, TouchableOpacity, View, Text, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { supabase } from "@/services/supabase";
@@ -11,6 +11,9 @@ import { getFriends } from "../../services/friends";
 import { getRoomMemberLocations, getRoomMembers } from "../../services/rooms";
 import { useLocationSharing } from "../../contexts/LocationSharingContext";
 import { avatarUrl, getProfile } from "../../services/profile";
+import { getVoiceMessages, getVoiceSignedUrl, deleteOwnVoiceMessage, VoiceMessage } from "../../services/voice";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
+import VoicePTTButton from "../../components/VoicePTTButton";
 
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_KEY || "");
 
@@ -36,6 +39,9 @@ export default function MapScreen() {
     useLocationSharing();
   const [followMode, setFollowMode] = useState(false);
   const [selectedRiderId, setSelectedRiderId] = useState<string | null>(null);
+  const [voiceMessages, setVoiceMessages] = useState<Record<string, VoiceMessage>>({});
+  const [playingUserId, setPlayingUserId] = useState<string | null>(null);
+  const voicePlayerRef = useRef<any>(null);
   const cameraRef = useRef<Camera>(null);
   const prevFriendIdsRef = useRef<string>("");
   const selectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -300,6 +306,91 @@ export default function MapScreen() {
     return () => clearInterval(interval);
   }, [currentRoom?.id]);
 
+  // Fetch voice messages for friends + room members
+  useEffect(() => {
+    if (!authUser) return;
+    const ids = [...new Set([
+      authUser.id,
+      ...friends.map((f) => f.user_id),
+      ...roomMembers.map((m: any) => m.user_id),
+    ])];
+    getVoiceMessages(ids).then(setVoiceMessages);
+  }, [friends, roomMembers, authUser]);
+
+  // Realtime voice message updates
+  useEffect(() => {
+    if (!authUser) return;
+    const channel = supabase
+      .channel("voice-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "voice_messages" },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const old = payload.old as any;
+            setVoiceMessages((prev) => {
+              const next = { ...prev };
+              delete next[old.user_id];
+              return next;
+            });
+          } else {
+            const m = payload.new as any;
+            setVoiceMessages((prev) => ({ ...prev, [m.user_id]: m }));
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [authUser]);
+
+  // Release audio player on unmount
+  useEffect(() => {
+    return () => { voicePlayerRef.current?.remove?.(); };
+  }, []);
+
+  const playVoice = async (rider: any) => {
+    const msg = voiceMessages[rider.user_id];
+    if (!msg) return;
+    try {
+      voicePlayerRef.current?.remove?.();
+      voicePlayerRef.current = null;
+      const url = await getVoiceSignedUrl(msg.audio_path);
+      if (!url) return;
+      await setAudioModeAsync({ playsInSilentMode: true });
+      const player = createAudioPlayer({ uri: url });
+      voicePlayerRef.current = player;
+      setPlayingUserId(rider.user_id);
+      player.addListener("playbackStatusUpdate", (status: any) => {
+        if (status?.didJustFinish) {
+          setPlayingUserId(null);
+          player.remove();
+          if (voicePlayerRef.current === player) voicePlayerRef.current = null;
+        }
+      });
+      player.play();
+    } catch {
+      setPlayingUserId(null);
+    }
+  };
+
+  const handleSelfVoiceTap = () => {
+    if (!authUser || !voiceMessages[authUser.id]) return;
+    Alert.alert("Your voice message", "Your crew can hear this for 24 hours.", [
+      { text: "Play", onPress: () => playVoice({ user_id: authUser.id }) },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await deleteOwnVoiceMessage(authUser.id);
+          setVoiceMessages((prev) => {
+            const next = { ...prev };
+            delete next[authUser.id];
+            return next;
+          });
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
   // Fly to a friend tapped from the crew tab
   useEffect(() => {
     if (!focusCoords || !cameraRef.current) return;
@@ -315,6 +406,10 @@ export default function MapScreen() {
 
   // Merge friends + room members, deduplicated, exclude self
   const selfId = authUser?.id;
+
+  const roomMemberIds = new Set(
+    currentRoom ? roomMembers.map((m: any) => m.user_id) : []
+  );
 
   const allRiders = Object.values(
     [...friends, ...roomMembers]
@@ -333,6 +428,8 @@ export default function MapScreen() {
       longitude: loc?.lng,
       is_sharing: loc?.is_sharing ?? false,
       updated_at: loc?.updated_at,
+      voice: voiceMessages[r.user_id] ?? null,
+      inRoom: roomMemberIds.has(r.user_id),
     };
   }).filter((r) => r.is_sharing && r.latitude && r.longitude);
 
@@ -410,6 +507,8 @@ export default function MapScreen() {
             rider={r}
             showLabel={zoomLevel >= 13}
             selected={selectedRiderId === r.user_id}
+            voicePlaying={playingUserId === r.user_id}
+            onPlayVoice={() => playVoice(r)}
             onPress={() => {
               if (selectedTimerRef.current) clearTimeout(selectedTimerRef.current);
               setSelectedRiderId(r.user_id);
@@ -433,8 +532,11 @@ export default function MapScreen() {
               latitude: selfCoords.latitude,
               longitude: selfCoords.longitude,
               isSelf: true,
+              voice: voiceMessages[authUser?.id] ?? null,
             }}
             showLabel={zoomLevel >= 13}
+            voicePlaying={playingUserId === authUser?.id}
+            onPlayVoice={handleSelfVoiceTap}
           />
         )}
       </MapView>
@@ -459,6 +561,14 @@ export default function MapScreen() {
           <Text style={styles.toastSub}>{toastConfig.sub}</Text>
         </View>
       </Animated.View>
+
+      {/* Push-to-talk voice button */}
+      {isSharing && selfProfile && authUser && (
+        <VoicePTTButton
+          userId={authUser.id}
+          avatarUri={avatarUrl(selfProfile.avatar_seed, selfProfile.email)}
+        />
+      )}
 
       {/* Bottom-right controls */}
       <View style={styles.controls}>

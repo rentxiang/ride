@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { MarkerView } from "@rnmapbox/maps";
 
 function getLastSeenText(updatedAt: string | undefined): string | null {
@@ -14,10 +15,19 @@ interface Props {
   rider: any;
   showLabel?: boolean;
   selected?: boolean;
+  voicePlaying?: boolean;
+  onPlayVoice?: () => void;
   onPress?: () => void;
 }
 
-export default function RiderMarker({ rider, showLabel = true, selected = false, onPress }: Props) {
+export default function RiderMarker({
+  rider,
+  showLabel = true,
+  selected = false,
+  voicePlaying = false,
+  onPlayVoice,
+  onPress,
+}: Props) {
   const glowScale = useRef(new Animated.Value(1)).current;
   const glowOpacity = useRef(new Animated.Value(0.18)).current;
 
@@ -66,7 +76,16 @@ export default function RiderMarker({ rider, showLabel = true, selected = false,
     return () => pulse.stop();
   }, [isStale]);
 
-  const glowColor = rider.isSelf ? "rgba(0, 122, 255," : "rgba(255, 69, 0,";
+  // Self = theme orange; room members (incl. friends in room) = distinct amber; plain friends = blue
+  let accentHex = "#007aff";
+  let glowColor = "rgba(0, 122, 255,";
+  if (rider.isSelf) {
+    accentHex = "#ff4500";
+    glowColor = "rgba(255, 69, 0,";
+  } else if (rider.inRoom) {
+    accentHex = "#ffa726";
+    glowColor = "rgba(255, 167, 38,";
+  }
 
   return (
     <MarkerView
@@ -80,6 +99,22 @@ export default function RiderMarker({ rider, showLabel = true, selected = false,
         activeOpacity={onPress ? 0.75 : 1}
         style={styles.container}
       >
+        {rider.voice && (
+          <TouchableOpacity
+            style={[styles.voiceBubble, voicePlaying && styles.voiceBubbleActive]}
+            onPress={onPlayVoice}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={voicePlaying ? "volume-high" : "play"}
+              size={11}
+              color="#fff"
+            />
+            <Text style={styles.voiceDur}>
+              {Math.max(1, Math.round(rider.voice.duration ?? 1))}&quot;
+            </Text>
+          </TouchableOpacity>
+        )}
         <View style={styles.avatarWrapper}>
           <Animated.View
             style={[
@@ -95,7 +130,7 @@ export default function RiderMarker({ rider, showLabel = true, selected = false,
             source={{ uri: rider.avatarUrl }}
             style={[
               styles.avatar,
-              rider.isSelf && styles.avatarSelf,
+              { borderColor: accentHex },
               isStale && styles.avatarStale,
             ]}
           />
@@ -119,6 +154,26 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
   },
+  voiceBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ff4500",
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginBottom: 4,
+    borderWidth: 2,
+    borderColor: "#080808",
+  },
+  voiceBubbleActive: {
+    backgroundColor: "#007aff",
+  },
+  voiceDur: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "800",
+  },
   avatarWrapper: {
     width: 40,
     height: 40,
@@ -137,9 +192,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: "#ff4500",
-  },
-  avatarSelf: {
-    borderColor: "#007aff",
   },
   avatarStale: {
     borderColor: "#444",

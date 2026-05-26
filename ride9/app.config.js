@@ -48,6 +48,12 @@ export default {
       ],
       "expo-apple-authentication",
       [
+        "expo-audio",
+        {
+          microphonePermission: "Crew needs your microphone so you can send voice messages to your crew.",
+        },
+      ],
+      [
         "@react-native-google-signin/google-signin",
         {
           iosUrlScheme: "com.googleusercontent.apps.974695425676-psot8r214sei09bbcra7pj9ndkkh8rdb",
