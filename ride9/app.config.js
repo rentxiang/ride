@@ -46,6 +46,13 @@ export default {
           isIosBackgroundLocationEnabled: true,
         },
       ],
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          iosUrlScheme: "com.googleusercontent.apps.974695425676-psot8r214sei09bbcra7pj9ndkkh8rdb",
+        },
+      ],
       "expo-router",
       [
         "expo-splash-screen",
