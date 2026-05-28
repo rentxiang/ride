@@ -7,22 +7,31 @@ import { supabase } from "../services/supabase";
 import { Room } from "../services/rooms";
 
 const ROOM_KEY = "@crew/current_room";
-const ALWAYS_HINT_KEY = "@crew/always_hint_shown";
+const SHARING_INTRO_KEY = "@crew/sharing_intro_shown";
 const SHARING_KEY = "@crew/sharing";
 
-// One-time nudge toward "Always Allow" so background sharing is reliable
-async function maybePromptAlways() {
+// One-time intro the first time a user turns on sharing. Tells them sharing
+// keeps running until they turn it off (closing the app does NOT stop it),
+// and nudges toward "Always" if not yet granted.
+async function maybeShowSharingIntro() {
+  if (await AsyncStorage.getItem(SHARING_INTRO_KEY)) return;
+  await AsyncStorage.setItem(SHARING_INTRO_KEY, "1");
   const { status } = await Location.getBackgroundPermissionsAsync();
-  if (status === "granted") return;
-  if (await AsyncStorage.getItem(ALWAYS_HINT_KEY)) return;
-  await AsyncStorage.setItem(ALWAYS_HINT_KEY, "1");
+  const needsAlways = status !== "granted";
+  const message =
+    "You stay visible to your crew until you turn sharing OFF in the app — closing or killing the app does NOT stop sharing." +
+    (needsAlways
+      ? '\n\nFor reliable background sharing, allow "Always" in Settings.'
+      : "");
   Alert.alert(
-    "Stay visible to your crew",
-    'Set location to "Always" so your crew can still see you during navigation or with your screen locked.',
-    [
-      { text: "Not Now", style: "cancel" },
-      { text: "Open Settings", onPress: () => Linking.openSettings() },
-    ]
+    "Sharing your location",
+    message,
+    needsAlways
+      ? [
+          { text: "Got it", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      : [{ text: "Got it", style: "cancel" }]
   );
 }
 
@@ -96,7 +105,7 @@ export function LocationSharingProvider({ children }: { children: ReactNode }) {
       });
       stopRef.current = stop;
       await AsyncStorage.setItem(SHARING_KEY, "1");
-      if (!opts?.silent) maybePromptAlways();
+      if (!opts?.silent) maybeShowSharingIntro();
     } catch {
       // failed to start — roll back
       setIsSharing(false);
