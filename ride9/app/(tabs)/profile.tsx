@@ -167,6 +167,13 @@ export default function ProfileScreen() {
       {/* Avatar picker */}
       <Text style={styles.sectionLabel}>CHOOSE AVATAR</Text>
       <View style={styles.avatarGrid}>
+        <TouchableOpacity
+          style={[styles.avatarOption, styles.avatarRandom]}
+          onPress={() => setSelectedSeed(`r_${Math.random().toString(36).slice(2, 10)}`)}
+          activeOpacity={0.75}
+        >
+          <Ionicons name="shuffle" size={22} color="#ff4500" />
+        </TouchableOpacity>
         {AVATAR_SEEDS.map((seed) => {
           const isSelected = selectedSeed === seed;
           return (
@@ -339,6 +346,13 @@ const styles = StyleSheet.create({
     borderColor: "#1a1a1a",
     overflow: "hidden",
     position: "relative",
+  },
+  avatarRandom: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0e0e0e",
+    borderColor: "#1e1e1e",
+    borderStyle: "dashed",
   },
   avatarOptionSelected: {
     borderColor: "#ff4500",
