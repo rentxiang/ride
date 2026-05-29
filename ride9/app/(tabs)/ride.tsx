@@ -29,7 +29,7 @@ import RouteEditor from "../../components/RouteEditor";
 
 export default function RideScreen() {
   const router = useRouter();
-  const { isSharing, startSharing, currentRoom, setCurrentRoom, coordsRef, showRoute, setShowRoute } =
+  const { isSharing, startSharing, currentRoom, setCurrentRoom, coordsRef, showRoute, setShowRoute, setFocusCoords } =
     useLocationSharing();
 
   const [authUser, setAuthUser] = useState<any>(null);
@@ -86,6 +86,23 @@ export default function RideScreen() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [authUser]);
+
+  const handleLocateMember = async (member: RoomMember) => {
+    if (member.user_id === authUser?.id) return; // don't locate self
+    const { data } = await supabase
+      .from("locations")
+      .select("lat, lng, is_sharing, updated_at")
+      .eq("user_id", member.user_id)
+      .maybeSingle();
+    if (!data?.lat || !data?.lng) {
+      Alert.alert("No location", `${member.name} hasn't shared their location.`);
+      return;
+    }
+    router.navigate("/");
+    setTimeout(() => {
+      setFocusCoords({ latitude: data.lat, longitude: data.lng });
+    }, 350);
+  };
 
   const handleAddRoommate = async (member: RoomMember) => {
     if (!authUser) return;
@@ -423,7 +440,12 @@ export default function RideScreen() {
           const isPending = pendingSet.has(item.user_id);
           return (
             <View style={styles.memberRow}>
-              <View style={styles.memberLeft}>
+              <TouchableOpacity
+                style={styles.memberLeft}
+                onPress={() => handleLocateMember(item)}
+                disabled={isMe}
+                activeOpacity={isMe ? 1 : 0.6}
+              >
                 <View style={[styles.memberDot, isMe && styles.memberDotMe]} />
                 <View>
                   <Text style={styles.memberName}>
@@ -432,7 +454,7 @@ export default function RideScreen() {
                   </Text>
                   {isRoomHost && <Text style={styles.hostBadge}>host</Text>}
                 </View>
-              </View>
+              </TouchableOpacity>
               {isMe ? null : isFriend ? (
                 <Ionicons name="checkmark" size={16} color="#555" />
               ) : isPending ? (

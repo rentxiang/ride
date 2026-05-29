@@ -47,6 +47,7 @@ export default {
         },
       ],
       "expo-apple-authentication",
+      "expo-notifications",
       [
         "expo-audio",
         {

@@ -10,10 +10,12 @@ import {
   Alert,
   ActivityIndicator,
   Linking,
+  Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../services/supabase";
 import { getProfile, updateProfile, avatarUrl, deleteAccount, UserProfile } from "../../services/profile";
+import { getNotificationsEnabled, setNotificationsEnabled } from "../../services/notifications";
 import { useLocationSharing } from "../../contexts/LocationSharingContext";
 
 // TODO: replace with your hosted PRIVACY.md URL (e.g. GitHub Pages / Notion public page)
@@ -33,6 +35,7 @@ export default function ProfileScreen() {
   const [selectedSeed, setSelectedSeed] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(true);
 
   const { stopSharing } = useLocationSharing();
 
@@ -48,10 +51,17 @@ export default function ProfileScreen() {
         setBike(p.bike ?? "");
         setSelectedSeed(p.avatar_seed);
       }
+      setNotifEnabled(await getNotificationsEnabled(data.user.id));
       setLoading(false);
     };
     load();
   }, []);
+
+  const toggleNotifications = async (next: boolean) => {
+    if (!profile) return;
+    setNotifEnabled(next);
+    await setNotificationsEnabled(profile.id, next);
+  };
 
   const handleSave = async () => {
     if (!profile) return;
@@ -234,6 +244,20 @@ export default function ProfileScreen() {
         <Text style={styles.saveButtonText}>{saving ? "Saving..." : "Save Profile"}</Text>
       </TouchableOpacity>
 
+      {/* Notifications toggle */}
+      <View style={styles.notifRow}>
+        <View>
+          <Text style={styles.notifTitle}>Police alerts</Text>
+          <Text style={styles.notifSub}>Push when a rider reports police nearby</Text>
+        </View>
+        <Switch
+          value={notifEnabled}
+          onValueChange={toggleNotifications}
+          trackColor={{ false: "#222", true: "#ff450080" }}
+          thumbColor={notifEnabled ? "#ff4500" : "#444"}
+        />
+      </View>
+
       {/* Sign out */}
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
         <Ionicons name="log-out-outline" size={18} color="#444" />
@@ -411,6 +435,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     letterSpacing: 1,
+  },
+  notifRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: "#1a1a1a",
+    marginTop: 24,
+  },
+  notifTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  notifSub: {
+    color: "#555",
+    fontSize: 12,
+    marginTop: 2,
   },
   signOutButton: {
     flexDirection: "row",

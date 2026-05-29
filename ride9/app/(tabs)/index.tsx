@@ -60,6 +60,7 @@ export default function MapScreen() {
   const [hazards, setHazards] = useState<Hazard[]>([]);
   const [pttVisible, setPttVisible] = useState(false);
   const voicePlayerRef = useRef<any>(null);
+  const headingRef = useRef<number | null>(null); // device compass heading
   const cameraRef = useRef<Camera>(null);
   const prevFriendIdsRef = useRef<string>("");
   const selectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,27 +215,76 @@ export default function MapScreen() {
     return () => clearInterval(interval);
   }, [isSharing]);
 
-  // Follow mode: nav-style pitched camera that tracks heading; recenter only
-  // after 2s of no user interaction so dragging the map isn't fought.
+  // While locked, follow device compass heading (responsive even when stopped)
+  // and keep coordsRef fresh even if sharing is OFF (so lock works standalone).
+  useEffect(() => {
+    if (!followMode) return;
+    let posSub: Location.LocationSubscription | null = null;
+    let hdgSub: Location.LocationSubscription | null = null;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      // Seed coords immediately so the first recenter doesn't wait for movement
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        coordsRef.current = {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          heading: loc.coords.heading,
+          speed: loc.coords.speed,
+        };
+      } catch {}
+      // Keep coords fresh (only needed when sharing isn't already doing this)
+      if (!isSharing) {
+        posSub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
+          (loc) => {
+            coordsRef.current = {
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              heading: loc.coords.heading,
+              speed: loc.coords.speed,
+            };
+          }
+        );
+      }
+      // Compass heading — tracks phone rotation, not just GPS course
+      hdgSub = await Location.watchHeadingAsync((h) => {
+        headingRef.current = h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      });
+    })();
+    return () => {
+      posSub?.remove();
+      hdgSub?.remove();
+    };
+  }, [followMode, isSharing]);
+
+  // Follow mode: nav-style pitched camera with the avatar pushed down-screen
+  // (more road ahead visible). Recenter only after 2s of no user interaction.
   useEffect(() => {
     if (!followMode) {
-      // Reset pitch/heading on unlock
-      cameraRef.current?.setCamera({ pitch: 0, heading: 0, animationDuration: 500 });
+      cameraRef.current?.setCamera({
+        pitch: 0,
+        heading: 0,
+        padding: { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
+        animationDuration: 500,
+      });
       return;
     }
     const interval = setInterval(() => {
       const idle = Date.now() - lastMapInteractionRef.current >= 2000;
       if (idle && coordsRef.current && cameraRef.current) {
-        const hdg = coordsRef.current.heading;
+        const hdg = headingRef.current ?? coordsRef.current.heading;
         cameraRef.current.setCamera({
           centerCoordinate: [coordsRef.current.longitude, coordsRef.current.latitude],
-          zoomLevel: 17,
-          pitch: 60,
+          zoomLevel: 19,
+          pitch: 50,
           heading: hdg != null && hdg >= 0 ? hdg : 0,
+          padding: { paddingTop: 300, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
           animationDuration: 800,
         });
       }
-    }, 1000);
+    }, 800);
     return () => clearInterval(interval);
   }, [followMode]);
 
@@ -782,6 +832,8 @@ export default function MapScreen() {
               longitude: selfCoords.longitude,
               isSelf: true,
               voice: voiceMessages[authUser?.id] ?? null,
+              speed: coordsRef.current?.speed,
+              heading: coordsRef.current?.heading,
             }}
             showLabel={zoomLevel >= 13}
             selected={selectedRiderId === `self-${authUser?.id}`}
@@ -864,12 +916,13 @@ export default function MapScreen() {
             setFollowMode(next);
             if (next && coordsRef.current && cameraRef.current) {
               lastMapInteractionRef.current = 0;
-              const hdg = coordsRef.current.heading;
+              const hdg = headingRef.current ?? coordsRef.current.heading;
               cameraRef.current.setCamera({
                 centerCoordinate: [coordsRef.current.longitude, coordsRef.current.latitude],
-                zoomLevel: 17,
-                pitch: 60,
+                zoomLevel: 18,
+                pitch: 50,
                 heading: hdg != null && hdg >= 0 ? hdg : 0,
+                padding: { paddingTop: 300, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
                 animationDuration: 700,
               });
             }

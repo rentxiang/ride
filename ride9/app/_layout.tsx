@@ -8,6 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/services/supabase";
 import { LocationSharingProvider } from "@/contexts/LocationSharingContext";
 import { ONBOARDING_KEY, OnboardingContext } from "@/contexts/onboarding";
+import { registerForPushNotifications } from "@/services/notifications";
 
 function parseSupabaseUrl(url: string) {
   // Tokens can be in fragment (#) or query string (?)
@@ -43,10 +44,14 @@ export default function RootLayout() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (session?.user) registerForPushNotifications(session.user.id);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === "SIGNED_IN" && session?.user) {
+        registerForPushNotifications(session.user.id);
+      }
     });
 
     // Handle deep link when app is already open

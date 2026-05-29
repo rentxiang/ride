@@ -90,7 +90,7 @@ export default function RiderMarker({
   const isStale = lastSeen !== null;
   // Speed (m/s → mph). When fast, intermittently swap the info line with a
   // random vibe — sometimes the speed, sometimes a phrase, sometimes nothing.
-  const FAST_MPH = 20;
+  const FAST_MPH = 70;
   const speedMph =
     typeof rider.speed === "number" && rider.speed > 0 ? rider.speed * 2.23694 : null;
   const isFast = speedMph != null && speedMph >= FAST_MPH;
@@ -102,14 +102,14 @@ export default function RiderMarker({
       return;
     }
     const phrases: ((mph: number) => string)[] = [
-      (m) => `🏍 ${Math.round(m)} mph`,
+      (m) => `${Math.round(m)} mph`,
       (m) => `racing at ${Math.round(m)}`,
       () => "flying...",
-      () => "WSBK 🏁",
+      () => "WSBK",
       () => "send it",
       () => "ripping it",
       () => "redline",
-      () => "🏁 mode",
+      () => "race mode",
       () => "full throttle",
     ];
     const flash = () => {
